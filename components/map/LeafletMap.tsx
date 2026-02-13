@@ -1,27 +1,34 @@
 "use client";
-import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect } from "react";
-import L from "leaflet";
 
-function GeeLayer({ url }: { url: string }) {
+// Komponen untuk menangani perpindahan posisi peta
+function MapController({ center, setCoords }: { center: [number, number], setCoords: any }) {
   const map = useMap();
+
+  // Berpindah jika ada pencarian lokasi baru
   useEffect(() => {
-    if (!url) return;
-    const layer = L.tileLayer(url);
-    layer.addTo(map);
-    return () => { map.removeLayer(layer); };
-  }, [url, map]);
+    map.setView(center, 13);
+  }, [center, map]);
+
+  // Menangkap koordinat tengah saat peta berhenti digeser
+  useMapEvents({
+    moveend: () => {
+      const newCenter = map.getCenter();
+      setCoords({ lat: newCenter.lat, lng: newCenter.lng });
+    },
+  });
+
   return null;
 }
 
-export default function LeafletMap({ tileUrl }: { tileUrl: string }) {
+export default function LeafletMap({ tileUrl, center, setCoords }: any) {
   return (
-    <div style={{ height: "500px", width: "100%", marginTop: "20px" }}>
-      <MapContainer center={[-7.82, 112.06]} zoom={13} style={{ height: "100%" }}>
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        {tileUrl && <GeeLayer url={tileUrl} />}
-      </MapContainer>
-    </div>
+    <MapContainer center={center} zoom={13} style={{ height: "100%", width: "100%" }}>
+      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <MapController center={center} setCoords={setCoords} />
+      {tileUrl && <TileLayer url={tileUrl} key={tileUrl} />}
+    </MapContainer>
   );
 }
