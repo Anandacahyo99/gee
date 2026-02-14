@@ -1,26 +1,59 @@
 @import "tailwindcss";
 
+/* 1. Reset & Global Variables */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Paksa variabel warna tetap cerah (Anti-Dark Mode) */
+  --background: #f8fafc; /* Slate 50 */
+  --foreground: #0f172a; /* Slate 900 */
+  
+  --emerald-600: #059669;
+  --emerald-500: #10b981;
+  --slate-200: #e2e8f0;
+  --slate-500: #64748b;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* 2. Style Locking - Menghapus Inversi Otomatis */
+/* Kita TIDAK menggunakan @media (prefers-color-scheme: dark) 
+   agar browser tidak merubah warna secara paksa menjadi hitam */
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 3. Perbaikan Kontainer Peta (Leaflet/GEE) */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background-color: #f1f5f9 !important;
+  border-radius: 1.5rem;
+  z-index: 1;
+}
+
+/* 4. Utility untuk Glassmorphism Navbar */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+/* 5. Mencegah Teks Pudar Menjadi Tidak Terbaca */
+.text-muted {
+  color: #64748b !important; /* Slate 500 tetap abu-abu di background terang */
+}
+
+/* 6. Animasi Custom untuk Logo/Icon */
+@keyframes pulse-emerald {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-emerald {
+  animation: pulse-emerald 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
