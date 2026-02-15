@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/layouts/Navbar";
+import SessionProvider from "@/components/providers/SessionProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,12 +26,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-      
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <Navbar />
-        {children}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-50`}>
+        {/* Membungkus seluruh aplikasi dengan SessionProvider agar useSession di Navbar bekerja */}
+        <SessionProvider>
+          <Navbar />
+          {/* Memberikan padding-top atau margin agar konten tidak tertutup Navbar yang sticky */}
+          <main className="min-h-screen">
+            {children}
+          </main>
+        </SessionProvider>
       </body>
     </html>
   );

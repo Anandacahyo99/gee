@@ -7,6 +7,7 @@ import {
   Map, Zap, ShieldCheck, ArrowRight, 
   BarChart3, Globe, Layers, MousePointerClick 
 } from "lucide-react";
+import Footer from "@/components/layouts/footer";
 
 export default function HomePage() {
   return (
@@ -153,6 +154,7 @@ export default function HomePage() {
     </div>
   );
 }
+
 
 // Sub-komponen Card untuk Reusability & Clean Code
 function FeatureCard({ icon, title, desc, delay }: { icon: React.ReactNode, title: string, desc: string, delay: number }) {

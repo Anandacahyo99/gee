@@ -1,15 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGEE } from '@/lib/gee/client';
+import { prisma } from '@/lib/prisma';
+import { getServerSession } from "next-auth";
+// Menggunakan alias @ untuk memastikan path ditemukan oleh compiler
+import { authOptions } from "@/app/api/auth/[...nextauth]/route"; 
 
 export async function POST(req: NextRequest) {
   try {
+    // 1. Validasi Sesi User
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const ee = await getGEE();
-    const { lat, lng, startDate, endDate } = await req.json();
+    const { lat, lng, startDate, endDate, locationName } = await req.json();
 
     const today = new Date().toISOString().split('T')[0];
     const end = endDate > today ? today : (endDate || today);
     const start = startDate || '2025-01-01';
 
+    // Koordinat Point untuk GEE
     const aoi = ee.Geometry.Point([parseFloat(lng), parseFloat(lat)]).buffer(2500).bounds();
 
     const maskCloud = (image: any) => {
@@ -18,7 +29,6 @@ export async function POST(req: NextRequest) {
       return image.updateMask(mask).divide(10000);
     };
 
-    // --- FUNGSI HELPER UNTUK ANALISIS ---
     const analyzeDateRange = async (dStart: string, dEnd: string) => {
       const collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
         .filterBounds(aoi)
@@ -28,6 +38,14 @@ export async function POST(req: NextRequest) {
 
       const dataset = collection.median();
       const ndvi = dataset.normalizedDifference(['B8', 'B4']).clip(aoi);
+
+      // Kalkulasi rata-rata NDVI untuk disimpan di database
+      const meanNdvi = ndvi.reduceRegion({
+        reducer: ee.Reducer.mean(),
+        geometry: aoi,
+        scale: 10,
+        maxPixels: 1e8
+      });
 
       const tertanamMask = ndvi.gt(0.45);
       const areaTertanamImg = tertanamMask.multiply(ee.Image.pixelArea());
@@ -43,31 +61,40 @@ export async function POST(req: NextRequest) {
         });
       };
 
-      const stats = await Promise.all([
-        new Promise((res) => getArea(areaTertanamImg).evaluate((r: any) => res((r && r.nd ? r.nd : 0) / 10000))),
-        new Promise((res) => getArea(areaKosongImg).evaluate((r: any) => res((r && r.nd ? r.nd : 0) / 10000)))
-      ]);
+      const stats = await new Promise((res) => {
+        const areaTertanam = getArea(areaTertanamImg);
+        const areaKosong = getArea(areaKosongImg);
+        
+        ee.Dictionary({
+          tertanam: areaTertanam.get('nd'),
+          kosong: areaKosong.get('nd'),
+          mean: meanNdvi.get('nd')
+        }).evaluate((r: any) => {
+          res([
+            (r?.tertanam || 0) / 10000, 
+            (r?.kosong || 0) / 10000,
+            (r?.mean || 0)
+          ]);
+        });
+      });
 
-      return { tertanam: stats[0] as number, kosong: stats[1] as number, ndvi, collectionSize: collection.size() };
+      const [tertanam, kosong, mean] = stats as number[];
+      return { tertanam, kosong, mean, ndvi, collectionSize: collection.size() };
     };
 
-    // --- EKSEKUSI ANALISIS DUA PERIODE ---
-    // Analisis 1: Periode "Baru" (Untuk Peta & Statistik Utama)
+    // Analisis Periode Baru
     const resultNew = await analyzeDateRange(start, end);
 
-    // Cek jika data periode baru kosong
     const countNew = await new Promise((res) => resultNew.collectionSize.evaluate((s: any) => res(s)));
     if (countNew === 0) {
       return NextResponse.json({ error: "Data satelit terbaru tidak ditemukan.", noData: true }, { status: 404 });
     }
 
-    // Analisis 2: Periode "Lama" (Hanya untuk perbandingan grafik)
-    // Kita buat range 3 bulan ke belakang dari startDate sebagai perbandingan baseline
+    // Analisis Periode Lama (Perbandingan)
     const baseStart = new Date(startDate);
     baseStart.setMonth(baseStart.getMonth() - 3);
     const resultOld = await analyzeDateRange(baseStart.toISOString().split('T')[0], startDate);
 
-    // --- PREPARASI DATA VIZ & RESPONS ---
     const vizParams = {
       min: 0, max: 0.8,
       palette: ['#FFFFFF', '#CE7E45', '#FCD163', '#66A000', '#207401', '#056201']
@@ -79,11 +106,30 @@ export async function POST(req: NextRequest) {
       });
     });
 
+    // --- INTEGRASI PRISMA (SESUAI SCHEMA) ---
+    const historyEntry = await prisma.history.create({
+      data: {
+        locationName: locationName || `${lat}, ${lng}`,
+        areaTertanam: parseFloat(resultNew.tertanam.toFixed(2)),
+        areaKosong: parseFloat(resultNew.kosong.toFixed(2)),
+        ndviAvg: parseFloat(resultNew.mean.toFixed(3)),
+        startDate: start,
+        endDate: end,
+        tileUrl: (mapId as any).urlFormat,
+        chartData: JSON.stringify([
+          { name: 'Sebelumnya', tertanam: resultOld.tertanam, kosong: resultOld.kosong },
+          { name: 'Saat Ini', tertanam: resultNew.tertanam, kosong: resultNew.kosong }
+        ]),
+        // Menghubungkan otomatis ke User ID lewat email session
+        user: { connect: { email: session.user.email } }
+      }
+    });
+
     return NextResponse.json({ 
+      id: historyEntry.id, 
       tileUrl: (mapId as any).urlFormat,
       areaTertanam: resultNew.tertanam.toFixed(2),
       areaKosong: resultNew.kosong.toFixed(2),
-      // DATA UNTUK GRAFIK (Tanpa Database)
       chartData: [
         { name: 'Sebelumnya', tertanam: resultOld.tertanam, kosong: resultOld.kosong },
         { name: 'Saat Ini', tertanam: resultNew.tertanam, kosong: resultNew.kosong }

@@ -44,3 +44,5 @@ lib/gee/service-account.json
 node_modules/
 .env.local
 .next/
+
+/lib/generated/prisma
