@@ -2,9 +2,6 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const ee = require('@google/earthengine');
 
-// Membaca file JSON secara langsung
-const serviceAccount = require('./service-account.json');
-
 let isInitialized = false;
 
 export const getGEE = async () => {
@@ -12,33 +9,31 @@ export const getGEE = async () => {
 
   return new Promise((resolve, reject) => {
     try {
-      console.log("⏳ Mencoba Autentikasi GEE via JSON File...");
+      const raw = process.env.GEE_SERVICE_ACCOUNT_JSON;
+
+      if (!raw) {
+        return reject(new Error("Missing GEE_SERVICE_ACCOUNT_JSON"));
+      }
+
+      const serviceAccount = JSON.parse(raw);
 
       ee.data.authenticateViaPrivateKey(
-        serviceAccount, // Kirim seluruh objek JSON asli
+        serviceAccount,
         () => {
-          console.log("🔑 Autentikasi Berhasil, memulai inisialisasi...");
           ee.initialize(
             null,
             null,
             () => {
               isInitialized = true;
-              console.log("✅ GEE Berhasil Terhubung!");
+              console.log("✅ GEE Connected");
               resolve(ee);
             },
-            (err: any) => {
-              console.error("❌ GEE Init Error:", err);
-              reject(new Error(err));
-            }
+            reject
           );
         },
-        (err: any) => {
-          console.error("❌ GEE Auth Error Detail:", err);
-          reject(new Error(err));
-        }
+        reject
       );
-    } catch (err: any) {
-      console.error("❌ GEE Fatal Error:", err);
+    } catch (err) {
       reject(err);
     }
   });

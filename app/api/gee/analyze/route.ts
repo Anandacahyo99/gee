@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getGEE } from '@/lib/gee/client';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from "next-auth";
-// Menggunakan alias @ untuk memastikan path ditemukan oleh compiler
 import { authOptions } from "@/app/api/auth/[...nextauth]/route"; 
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Validasi Sesi User
+    // 1. Ambil Sesi User (Opsional sekarang)
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    
+    // Kita tidak lagi me-return 401 jika session kosong.
+    // Kita hanya menyimpan email jika user memang login.
+    const userEmail = session?.user?.email;
 
     const ee = await getGEE();
     const { lat, lng, startDate, endDate, locationName } = await req.json();
@@ -39,7 +39,6 @@ export async function POST(req: NextRequest) {
       const dataset = collection.median();
       const ndvi = dataset.normalizedDifference(['B8', 'B4']).clip(aoi);
 
-      // Kalkulasi rata-rata NDVI untuk disimpan di database
       const meanNdvi = ndvi.reduceRegion({
         reducer: ee.Reducer.mean(),
         geometry: aoi,
@@ -106,23 +105,29 @@ export async function POST(req: NextRequest) {
       });
     });
 
-    // --- INTEGRASI PRISMA (SESUAI SCHEMA) ---
+    // --- INTEGRASI PRISMA (MODIFIKASI) ---
+    // Siapkan data object dasar
+    const dbData: any = {
+      locationName: locationName || `${lat}, ${lng}`,
+      areaTertanam: parseFloat(resultNew.tertanam.toFixed(2)),
+      areaKosong: parseFloat(resultNew.kosong.toFixed(2)),
+      ndviAvg: parseFloat(resultNew.mean.toFixed(3)),
+      startDate: start,
+      endDate: end,
+      tileUrl: (mapId as any).urlFormat,
+      chartData: JSON.stringify([
+        { name: 'Sebelumnya', tertanam: resultOld.tertanam, kosong: resultOld.kosong },
+        { name: 'Saat Ini', tertanam: resultNew.tertanam, kosong: resultNew.kosong }
+      ]),
+    };
+
+    // HANYA hubungkan ke User jika userEmail tersedia (sudah login)
+    if (userEmail) {
+      dbData.user = { connect: { email: userEmail } };
+    }
+
     const historyEntry = await prisma.history.create({
-      data: {
-        locationName: locationName || `${lat}, ${lng}`,
-        areaTertanam: parseFloat(resultNew.tertanam.toFixed(2)),
-        areaKosong: parseFloat(resultNew.kosong.toFixed(2)),
-        ndviAvg: parseFloat(resultNew.mean.toFixed(3)),
-        startDate: start,
-        endDate: end,
-        tileUrl: (mapId as any).urlFormat,
-        chartData: JSON.stringify([
-          { name: 'Sebelumnya', tertanam: resultOld.tertanam, kosong: resultOld.kosong },
-          { name: 'Saat Ini', tertanam: resultNew.tertanam, kosong: resultNew.kosong }
-        ]),
-        // Menghubungkan otomatis ke User ID lewat email session
-        user: { connect: { email: session.user.email } }
-      }
+      data: dbData
     });
 
     return NextResponse.json({ 
@@ -134,7 +139,7 @@ export async function POST(req: NextRequest) {
         { name: 'Sebelumnya', tertanam: resultOld.tertanam, kosong: resultOld.kosong },
         { name: 'Saat Ini', tertanam: resultNew.tertanam, kosong: resultNew.kosong }
       ],
-      info: `Membandingkan kondisi ${startDate} dengan ${end}`
+      info: `Analisis selesai. ${userEmail ? 'Tersimpan di akun Anda.' : 'Tersimpan sebagai Tamu.'}`
     });
 
   } catch (error: any) {
